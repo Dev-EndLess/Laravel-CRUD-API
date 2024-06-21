@@ -2,57 +2,67 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
 
 class AuthController extends Controller
 {
-  public function register(Request $request)
-  {
-    $validator = Validator::make($request->all(), [
-      'name' => 'required|string|max:255',
-      'email' => 'required|string|email|max:255|unique:users',
-      'password' => 'required|string|min:8',
-    ]);
+    public function register(Request $request) {
+        $fields = $request->validate([
+            'name' => 'required|string',
+            'email' => 'required|string|unique:users,email',
+            'password' => 'required|string|confirmed'
+        ]);
 
-    if ($validator->fails()) {
-      return response()->json($validator->errors(), 422);
+        $user = User::create([
+            'name' => $fields['name'],
+            'email' => $fields['email'],
+            'password' => bcrypt($fields['password'])
+        ]);
+
+        $token = $user->createToken('myapptoken')->plainTextToken;
+
+        $response = [
+            'user' => $user,
+            'token' => $token
+        ];
+
+        return response($response, 201);
     }
 
-    $user = User::create([
-      'name' => $request->name,
-      'email' => $request->email,
-      'password' => Hash::make($request->password),
-    ]);
+    public function login(Request $request) {
+        $fields = $request->validate([
+            'email' => 'required|string',
+            'password' => 'required|string'
+        ]);
 
-    return response()->json(['user' => $user, 'token' => $user->createToken('API Token')->plainTextToken]);
-  }
+        // Check email
+        $user = User::where('email', $fields['email'])->first();
 
-  public function login(Request $request)
-  {
-    $validator = Validator::make($request->all(), [
-      'email' => 'required|string|email',
-      'password' => 'required|string',
-    ]);
+        // Check password
+        if(!$user || !Hash::check($fields['password'], $user->password)) {
+            return response([
+                'message' => 'Bad creds'
+            ], 401);
+        }
 
-    if ($validator->fails()) {
-      return response()->json($validator->errors(), 422);
+        $token = $user->createToken('myapptoken')->plainTextToken;
+
+        $response = [
+            'user' => $user,
+            'token' => $token
+        ];
+
+        return response($response, 201);
     }
 
-    $user = User::where('email', $request->email)->first();
+    public function logout(Request $request) {
+        auth()->user()->tokens()->delete();
 
-    if (!$user || !Hash::check($request->password, $user->password)) {
-      return response()->json(['error' => 'Invalid credentials'], 401);
+        return [
+            'message' => 'Logged out'
+        ];
     }
-
-    return response()->json(['user' => $user, 'token' => $user->createToken('API Token')->plainTextToken]);
-  }
-
-  public function logout(Request $request)
-  {
-    $request->user()->tokens()->delete();
-    return response()->json(['message' => 'Logged out']);
-  }
 }
